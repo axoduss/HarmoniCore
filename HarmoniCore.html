@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Harmonic Spirograph 3D - Audio Reattivo</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Rajdhani', 'Segoe UI', sans-serif; background: #05050a; color: #cdefff; overflow: hidden; }
+
+    #canvas-container { position: fixed; inset: 0; }
+
+    /* ===== PANNELLO HUD ===== */
+    .ui {
+        position: fixed; top: 20px; left: 20px; z-index: 10;
+        background: linear-gradient(160deg, rgba(0,25,40,0.75), rgba(0,10,20,0.65));
+        border: 1px solid rgba(0,220,255,0.35);
+        padding: 22px; width: 320px; transition: transform .3s, opacity .4s;
+        /* angoli tagliati stile HUD */
+        clip-path: polygon(0 14px, 14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+        box-shadow: 0 0 30px rgba(0,220,255,0.15), inset 0 0 30px rgba(0,220,255,0.05);
+        backdrop-filter: blur(10px);
+    }
+    /* linea decorativa superiore */
+    .ui::before {
+        content: ''; position: absolute; top: 8px; left: 30px; right: 14px; height: 1px;
+        background: linear-gradient(90deg, #00dcff, transparent);
+    }
+    .ui.hidden { transform: translateX(-360px); }
+
+    .ui h2 {
+        font-size: 1.05em; margin-bottom: 18px; color: #00eaff; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 3px;
+        text-shadow: 0 0 12px rgba(0,220,255,0.6);
+        display: flex; align-items: center; gap: 8px;
+    }
+    .ui h2::before { content: '◈'; color: #00eaff; }
+
+    .ctl { margin-bottom: 18px; position: relative; }
+    .ctl label {
+        display: flex; justify-content: space-between; font-size: .72em; color: #6fd8ff;
+        margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600;
+    }
+    .ctl label::before { content: '▸ '; color: #00dcff; }
+
+    /* ===== SLIDER HUD ===== */
+    input[type=range] {
+        width: 100%; height: 4px; background: rgba(0,220,255,0.12);
+        outline: none; -webkit-appearance: none;
+        border: 1px solid rgba(0,220,255,0.2);
+    }
+    input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none; width: 14px; height: 20px;
+        background: #00eaff; cursor: pointer;
+        clip-path: polygon(0 0, 100% 25%, 100% 75%, 0 100%);
+        box-shadow: 0 0 14px rgba(0,234,255,0.9);
+    }
+    input[type=range]::-moz-range-thumb {
+        width: 14px; height: 20px; background: #00eaff; border: none; cursor: pointer;
+        box-shadow: 0 0 14px rgba(0,234,255,0.9);
+    }
+
+    input[type=file] { display: none; }
+
+    /* ===== BOTTONI HUD ===== */
+    .btn {
+        display: block; width: 100%; text-align: center; padding: 12px;
+        border: 1px solid rgba(0,220,255,0.4); cursor: pointer; font-weight: 700;
+        margin-bottom: 10px; transition: all .2s; font-size: .82em;
+        text-transform: uppercase; letter-spacing: 2px;
+        background: rgba(0,220,255,0.08); color: #00eaff;
+        clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    }
+    .btn:hover {
+        background: rgba(0,220,255,0.2); color: #fff;
+        box-shadow: 0 0 20px rgba(0,220,255,0.4);
+    }
+    .file-btn { border-color: rgba(0,234,255,0.5); }
+    .mic-btn { border-color: rgba(255,60,120,0.5); color: #ff5a8a; background: rgba(255,60,120,0.08); }
+    .mic-btn:hover { background: rgba(255,60,120,0.2); color: #fff; box-shadow: 0 0 20px rgba(255,60,120,0.4); }
+
+    audio { width: 100%; margin-top: 10px; filter: hue-rotate(160deg) saturate(1.4); }
+
+    .status {
+        font-size: .72em; color: #00eaff; margin-top: 12px; text-align: center;
+        letter-spacing: 1px; font-family: 'Courier New', monospace;
+        border-top: 1px solid rgba(0,220,255,0.15); padding-top: 10px;
+    }
+    .status::before { content: '// '; color: #00dcff; }
+
+    /* ===== TOGGLE MENU ===== */
+    .toggle-ui {
+        position: fixed; top: 20px; left: 360px; z-index: 11;
+        background: rgba(0,25,40,0.7); border: 1px solid rgba(0,220,255,0.4);
+        padding: 12px 16px; cursor: pointer; color: #00eaff; font-size: 1.1em;
+        transition: left .3s, opacity .3s;
+        clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
+        box-shadow: 0 0 15px rgba(0,220,255,0.2);
+    }
+    .toggle-ui:hover { background: rgba(0,220,255,0.2); }
+    .ui.hidden ~ .toggle-ui { left: 20px; }
+    body.idle .toggle-ui { opacity: 0; pointer-events: none; }
+
+    /* ===== AZIONI IN ALTO A DESTRA ===== */
+    .top-actions {
+        position: fixed; top: 20px; right: 20px; z-index: 12;
+        display: flex; gap: 12px; transition: opacity .4s;
+    }
+    .action-btn {
+        width: 52px; height: 52px; border: 1px solid rgba(0,220,255,0.4);
+        background: rgba(0,25,40,0.7); color: #00eaff; font-size: 1.3em; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        transition: all .2s; position: relative;
+        clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+        box-shadow: 0 0 15px rgba(0,220,255,0.15), inset 0 0 15px rgba(0,220,255,0.05);
+    }
+    .action-btn:hover {
+        background: rgba(0,220,255,0.2); color: #fff;
+        box-shadow: 0 0 25px rgba(0,220,255,0.5);
+    }
+    .action-btn.off { color: #2a5a6a; border-color: rgba(0,220,255,0.15); box-shadow: none; }
+    .action-btn.rec-active {
+        color: #ff2d6e; border-color: #ff2d6e;
+        box-shadow: 0 0 25px rgba(255,45,110,0.6); animation: blink .6s infinite;
+    }
+    body.idle .top-actions { opacity: 0; pointer-events: none; }
+
+    @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:.35;} }
+
+    /* scanline sottile decorativa su tutto lo schermo (opzionale) */
+    body::after {
+        content: ''; position: fixed; inset: 0; z-index: 4; pointer-events: none;
+        background: repeating-linear-gradient(0deg, rgba(0,220,255,0.02) 0px, rgba(0,220,255,0.02) 1px, transparent 1px, transparent 3px);
+    }
+	 .src-row {
+        display: flex; gap: 8px;
+    }
+    .src-row .btn {
+        flex: 1;               /* occupano metà ciascuno */
+        margin-bottom: 6px;
+        padding: 9px 6px;      /* più compatti */
+        font-size: .72em;
+        letter-spacing: 1px;
+    }
+
+	
+	
+</style>
+</head>
+<body>
+<div id="canvas-container"></div>
+<canvas id="spectrum" style="position:fixed; bottom:0; left:0; width:100%; height:120px; z-index:5; pointer-events:none;"></canvas>
+
+<div class="ui" id="ui">
+    <h2>Harmonic Core</h2>
+    <div class="ctl">
+        <label for="fileInput">Sorgente Audio</label>
+		 <div class="src-row">
+            <label for="fileInput" class="btn file-btn">📁 File</label>
+            <button class="btn mic-btn" id="micBtn">🎤 Mic</button>
+        </div>
+        <input type="file" id="fileInput" accept="audio/*">
+        <audio id="audioPlayer" controls style="display:none;"></audio>
+        <div class="status" id="status">In attesa di audio…</div>
+    </div>
+    <div class="ctl">
+        <label>Densità riccioli (spirograph)</label>
+        <input type="range" id="curls" min="2" max="14" step="0.1" value="7">
+    </div>
+    <div class="ctl">
+        <label>Velocità evoluzione forma</label>
+        <input type="range" id="evolve" min="0" max="100" value="30">
+    </div>
+    <div class="ctl">
+        <label>Reattività audio</label>
+        <input type="range" id="reactivity" min="0" max="200" value="100">
+    </div>
+    <div class="ctl">
+        <label>Intensità bloom</label>
+        <input type="range" id="bloom" min="0" max="300" value="150">
+    </div>
+    <div class="ctl">
+        <label>Velocità cambio colore</label>
+        <input type="range" id="colorSpeed" min="0" max="100" value="40">
+    </div>
+	<div class="ctl">
+        <label>Movimento nello spazio</label>
+        <input type="range" id="drift" min="0" max="300" value="120">
+    </div>
+	<div class="ctl">
+        <label>Pulsazione (respiro)</label>
+        <input type="range" id="pulse" min="0" max="100" value="40">
+    </div>
+    <div class="ctl">
+        <label>Effetto scia</label>
+        <input type="range" id="trail" min="0" max="90" value="50">
+    </div>
+	<div class="ctl">
+        <label>Velocità morphing</label>
+        <input type="range" id="morphSpeed" min="0" max="100" value="30">
+    </div>
+	<div class="ctl">
+        <label>Motion Blur (scia luminosa)</label>
+        <input type="range" id="motionBlur" min="0" max="97" value="85">
+    </div>
+</div>
+<div class="toggle-ui" id="toggleUi">⧉</div>
+<div class="top-actions" id="topActions">
+    <button class="action-btn" id="spectrumToggle" title="Spettro audio">⊟</button>
+    <button class="action-btn" id="recordBtn" title="Registra video">⦿</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
+
+// === SCENA ===
+const container = document.getElementById('canvas-container');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(0, 0, 380);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2.5));
+container.appendChild(renderer.domElement);
+
+// === POST-PROCESSING ===
+const composer = new EffectComposer(renderer);
+
+
+
+// === BLOOM ===
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(innerWidth, innerHeight), 1.5, 0.4, 0.85
+);
+bloomPass.strength = 1.5;
+bloomPass.radius = 0.6;
+bloomPass.threshold = 0.25;
+composer.addPass(bloomPass);
+
+
+// === MOTION BLUR (AfterimagePass) ===
+const afterimagePass = new AfterimagePass();
+afterimagePass.uniforms['damp'].value = 0.75;  // 0 = niente scia, ~0.98 = scia lunghissima
+composer.addPass(afterimagePass);
+
+
+
+
+// === CURVA ARMONICA (Spirograph 3D dinamico) ===
+const NUM_POINTS = 6000;
+const positions = new Float32Array(NUM_POINTS * 3);
+const colors = new Float32Array(NUM_POINTS * 3);
+
+const geometry = new THREE.BufferGeometry();
+geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+const material = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending
+});
+const line = new THREE.Line(geometry, material);
+scene.add(line);
+
+
+// === SCIA (copie che seguono con ritardo) ===
+const MAX_TRAIL = 20;
+const trailLines = [];
+const trailHistory = [];   // salva posizioni/rotazioni passate
+
+for (let k = 0; k < MAX_TRAIL; k++) {
+    const trailMat = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.0,
+        blending: THREE.AdditiveBlending
+    });
+    // condividono la STESSA geometria della curva (leggero e sincronizzato)
+    const tl = new THREE.Line(geometry, trailMat);
+    tl.visible = false;
+    scene.add(tl);
+    trailLines.push(tl);
+}
+
+
+
+// === PARAMETRI ===
+let params = {
+    curls: 7,
+    evolve: 0.30,
+    reactivity: 1.0,
+    colorSpeed: 0.40,
+	drift: 120,
+	pulse: 0.40,        
+    trail: 8            
+};
+
+// === AUDIO ===
+let audioCtx=null, analyser=null, dataArray=null, sourceNode=null, micStream=null;
+const audioPlayer = document.getElementById('audioPlayer');
+
+// === SPETTRO AUDIO (canvas 2D sovrapposto) ===
+const spectrumCanvas = document.getElementById('spectrum');
+const spectrumCtx = spectrumCanvas.getContext('2d');
+let showSpectrum = true;
+
+function resizeSpectrum(){
+    const dpr = window.devicePixelRatio || 1;
+    spectrumCanvas.width = innerWidth * dpr;
+    spectrumCanvas.height = 120 * dpr;
+    spectrumCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resizeSpectrum();
+
+function drawSpectrum(){
+    const w = innerWidth, h = 120;
+    spectrumCtx.clearRect(0, 0, w, h);
+    if (!showSpectrum || !analyser) return;
+
+    const n = dataArray.length;      // dataArray è già aggiornato da getAudio()
+    const numBars = 96;              // quante barrette
+    const step = Math.floor(n / numBars);
+    const gap = 2;
+    const barWidth = (w / numBars) - gap;
+
+    for (let i = 0; i < numBars; i++) {
+        // media di un gruppo di bin per ogni barretta
+        let sum = 0;
+        for (let j = 0; j < step; j++) sum += dataArray[i * step + j];
+        const val = (sum / step) / 255;      // 0..1
+        const barHeight = val * h * 0.9;
+
+        const x = i * (barWidth + gap);
+        // bianco tenue, opacità legata all'intensità (non troppo evidente)
+        spectrumCtx.fillStyle = `rgba(255,255,255,${0.10 + val * 0.35})`;
+        spectrumCtx.fillRect(x, h - barHeight, barWidth, barHeight);
+    }
+}
+
+// === CANVAS DI COMPOSIZIONE (per registrare WebGL + spettro insieme) ===
+const compositeCanvas = document.createElement('canvas');
+const compositeCtx = compositeCanvas.getContext('2d');
+let recording = false;
+
+function updateCompositeSize(){
+    compositeCanvas.width = renderer.domElement.width;
+    compositeCanvas.height = renderer.domElement.height;
+}
+
+function drawComposite(){
+    // 1) copia la scena WebGL
+    compositeCtx.drawImage(renderer.domElement, 0, 0, compositeCanvas.width, compositeCanvas.height);
+    // 2) sovrappone lo spettro (scalato in basso)
+    if (showSpectrum) {
+        const sh = compositeCanvas.height * (120 / innerHeight);
+        compositeCtx.drawImage(
+            spectrumCanvas,
+            0, compositeCanvas.height - sh,
+            compositeCanvas.width, sh
+        );
+    }
+}
+
+
+
+
+function initAudio(){
+    if(!audioCtx){
+        audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 1024;
+        analyser.smoothingTimeConstant = 0.8;
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+    }
+    if(audioCtx.state==='suspended') audioCtx.resume();
+}
+
+function getAudio(){
+    if(!analyser) return {bass:0, mid:0, treble:0, vol:0};
+    analyser.getByteFrequencyData(dataArray);
+    const n = dataArray.length;
+    const be = Math.floor(n*0.08), me = Math.floor(n*0.35);
+    let bass=0, mid=0, treble=0, tot=0;
+    for(let i=0;i<n;i++){
+        tot+=dataArray[i];
+        if(i<be) bass+=dataArray[i];
+        else if(i<me) mid+=dataArray[i];
+        else treble+=dataArray[i];
+    }
+    return {
+        bass: (bass/be)/255,
+        mid: (mid/(me-be))/255,
+        treble: (treble/(n-me))/255,
+        vol: (tot/n)/255
+    };
+}
+
+// === ANIMAZIONE ===
+let time = 0;
+let hue = 0;
+let bloomKick = 0;
+let sBass = 0, sMid = 0, sTreble = 0, sVol = 0;
+
+function smoothAudio(audio, k = 0.08){
+    // k basso = più fluido/lento, k alto = più reattivo
+    sBass   += (audio.bass   - sBass)   * k;
+    sMid    += (audio.mid    - sMid)    * k;
+    sTreble += (audio.treble - sTreble) * k;
+    sVol    += (audio.vol    - sVol)    * k;
+    return { bass: sBass, mid: sMid, treble: sTreble, vol: sVol };
+}
+// === BEAT DETECTION (migliorato) ===
+let energyHistory = [];        // storico energia bassi
+const HISTORY_SIZE = 43;       // ~0.7s a 60fps
+let beatCooldown = 0;
+let beatParams = { sens: 1.4, amount: 60 };
+
+function getBassEnergy(){
+    // energia sui BIN più bassi (kick/cassa), non la media generale
+    let e = 0;
+    const bins = 10;   // primi bin = frequenze molto basse
+    for (let i = 0; i < bins; i++) e += dataArray[i] * dataArray[i];
+    return e / bins / (255*255);   // normalizzato 0..1
+}
+
+function detectBeat(){
+	if (!dataArray) return false;
+    if (beatCooldown > 0) beatCooldown--;
+
+    const energy = getBassEnergy();
+    energyHistory.push(energy);
+    if (energyHistory.length > HISTORY_SIZE) energyHistory.shift();
+    if (energyHistory.length < HISTORY_SIZE) return false;  // aspetta di riempire
+
+    // media dello storico (SENZA il campione attuale che ha appena aggiunto)
+    let avg = 0;
+    for (let i = 0; i < energyHistory.length - 1; i++) avg += energyHistory[i];
+    avg /= (energyHistory.length - 1);
+
+    // beat = energia attuale supera la media × sensibilità
+    if (energy > avg * beatParams.sens && energy > 0.02 && beatCooldown === 0) {
+        beatCooldown = 6;   // ~100ms di pausa minima
+        return true;
+    }
+    return false;
+}
+
+
+// === MORPHING: set di formule di curva diverse ===
+// ogni preset restituisce {x, y, z} dato t e le frequenze
+const shapePresets = [
+    // 0 - Spirograph classico (quello attuale)
+    (t, f1, f2, f3, f4, phi) => ({
+        x: Math.sin(f1*t + phi) + 0.5*Math.sin(f3*t),
+        y: Math.cos(f2*t) + 0.4*Math.sin(f4*t + phi),
+        z: Math.sin(f3*t)*Math.cos(f1*t) + 0.3*Math.sin(f2*t)
+    }),
+    // 1 - Toroide / nodo
+    (t, f1, f2, f3, f4, phi) => ({
+        x: (2 + Math.cos(f2*t)) * Math.cos(f1*t + phi),
+        y: (2 + Math.cos(f2*t)) * Math.sin(f1*t),
+        z: Math.sin(f2*t) + 0.5*Math.sin(f3*t)
+    }),
+    // 2 - Rosa / fiore
+    (t, f1, f2, f3, f4, phi) => ({
+        x: Math.cos(f1*t) * Math.sin(f2*t + phi),
+        y: Math.sin(f1*t) * Math.sin(f2*t),
+        z: Math.cos(f3*t) * 0.8
+    }),
+    // 3 - Onda a spirale
+    (t, f1, f2, f3, f4, phi) => ({
+        x: Math.sin(f1*t + phi) * Math.cos(f4*t),
+        y: Math.cos(f2*t) * Math.sin(f4*t),
+        z: Math.sin(f3*t + phi)
+    }),
+    // 4 - Nodo intrecciato
+    (t, f1, f2, f3, f4, phi) => ({
+        x: Math.sin(f1*t) + 0.6*Math.cos(f2*t + phi),
+        y: Math.cos(f1*t) + 0.6*Math.sin(f3*t),
+        z: Math.sin(f2*t + phi)*Math.cos(f4*t)
+    })
+];
+
+let morphIndex = 0;          // preset di partenza
+let morphTarget = 1;         // preset di destinazione
+let morphProgress = 0;       // 0..1 avanzamento transizione
+let morphSpeed = 0.30;
+
+
+
+
+function updateCurve(audio){
+    const react = params.reactivity;
+    const f1 = 3 + params.curls * 0.5 + audio.bass * 4 * react;
+    const f2 = 5 + Math.sin(time*0.3) * 2 + audio.mid * 3 * react;
+    const f3 = params.curls + audio.treble * 5 * react;
+    const f4 = 2 + Math.cos(time*0.2) * 1.5;
+
+    const breath = 1 + Math.sin(time * 2.0) * params.pulse * 0.15;
+    const beat = 1 + audio.bass * params.pulse * 0.8;
+    const amp = 100 * (1 + audio.bass * 0.5 * react) * breath * beat;
+    const phi = time * 0.5;
+
+    // avanza il morphing
+    morphProgress += morphSpeed * 0.004;
+    if (morphProgress >= 1) {
+        morphProgress = 0;
+        morphIndex = morphTarget;
+        // scegli un nuovo target diverso dall'attuale
+        do {
+            morphTarget = Math.floor(Math.random() * shapePresets.length);
+        } while (morphTarget === morphIndex);
+    }
+
+    // curva di transizione morbida (ease in-out)
+    const blend = morphProgress < 0.5
+        ? 2 * morphProgress * morphProgress
+        : 1 - Math.pow(-2 * morphProgress + 2, 2) / 2;
+
+    const shapeA = shapePresets[morphIndex];
+    const shapeB = shapePresets[morphTarget];
+
+    for(let i=0; i<NUM_POINTS; i++){
+        const t = (i/NUM_POINTS) * Math.PI * 2;
+
+        const a = shapeA(t, f1, f2, f3, f4, phi);
+        const b = shapeB(t, f1, f2, f3, f4, phi);
+
+        // interpola tra le due forme
+        const x = a.x + (b.x - a.x) * blend;
+        const y = a.y + (b.y - a.y) * blend;
+        const z = a.z + (b.z - a.z) * blend;
+
+        positions[i*3]   = x * amp;
+        positions[i*3+1] = y * amp;
+        positions[i*3+2] = z * amp;
+
+        const c = new THREE.Color();
+        c.setHSL(((hue + i/NUM_POINTS*0.5) % 1), 1.0, 0.55);
+        colors[i*3]   = c.r;
+        colors[i*3+1] = c.g;
+        colors[i*3+2] = c.b;
+    }
+    geometry.attributes.position.needsUpdate = true;
+    geometry.attributes.color.needsUpdate = true;
+}
+    // === LOOP DI ANIMAZIONE ===
+    function animate(){
+        requestAnimationFrame(animate);
+
+        const audio = getAudio();
+		const sAudio = smoothAudio(audio);
+
+        // avanzamento tempo (evoluzione forma + velocità colore)
+        time += 0.005 + params.evolve * 0.02 + audio.treble * 0.03;
+        hue = (hue + params.colorSpeed * 0.002 + audio.vol * 0.01) % 1;
+
+        // aggiorna la geometria della curva
+        updateCurve(sAudio);
+
+        // rotazione 3D cinematografica (accelerata dagli alti)
+		line.rotation.y += 0.002 + sAudio.mid * 0.01;
+        line.rotation.x += 0.001 + sAudio.bass * 0.005;
+        line.rotation.z += 0.0015 + sAudio.treble * 0.008;
+
+        const d = params.drift;
+        line.position.x = Math.sin(time * 0.3)  * d * (0.5 + sAudio.mid);
+        line.position.y = Math.cos(time * 0.23) * d * 0.7 * (0.5 + sAudio.bass);
+        line.position.z = Math.sin(time * 0.17) * d * 1.2 * (0.5 + sAudio.vol);
+		
+		
+		// === SCIA: registra lo stato attuale e aggiorna le copie ===
+        trailHistory.unshift({
+            px: line.position.x, py: line.position.y, pz: line.position.z,
+            rx: line.rotation.x, ry: line.rotation.y, rz: line.rotation.z
+        });
+        if (trailHistory.length > MAX_TRAIL * 4) trailHistory.pop();
+
+        const trailCount = Math.round(params.trail);
+        for (let k = 0; k < MAX_TRAIL; k++) {
+            const tl = trailLines[k];
+            if (k < trailCount) {
+                const hist = trailHistory[(k + 1) * 4];  // ritardo crescente
+                if (hist) {
+                    tl.visible = true;
+                    tl.position.set(hist.px, hist.py, hist.pz);
+                    tl.rotation.set(hist.rx, hist.ry, hist.rz);
+                    // le copie più "vecchie" sono più trasparenti
+                    tl.material.opacity = 0.35 * (1 - k / trailCount);
+                } else {
+                    tl.visible = false;
+                }
+            } else {
+                tl.visible = false;
+            }
+        }
+		
+		
+
+        // bloom che pulsa col volume
+        bloomPass.strength = params.bloomBase * (1 + sAudio.vol * 0.8 + bloomKick);
+
+        composer.render();
+		drawSpectrum();
+		if (recording) drawComposite();
+    }
+
+    // valore base del bloom (impostato dallo slider)
+    params.bloomBase = 1.0;
+
+    // === GESTIONE FILE AUDIO ===
+    document.getElementById('fileInput').addEventListener('change', function(e){
+        const file = e.target.files[0];
+        if(!file) return;
+        initAudio();
+        audioPlayer.src = URL.createObjectURL(file);
+        if(!sourceNode){
+            sourceNode = audioCtx.createMediaElementSource(audioPlayer);
+            sourceNode.connect(analyser);
+            analyser.connect(audioCtx.destination);
+        }
+        audioPlayer.play();
+		audioPlayer.style.display = 'block';
+        document.getElementById('status').textContent = '▶ ' + file.name.substring(0, 28);
+    });
+
+    // === GESTIONE MICROFONO ===
+    document.getElementById('micBtn').addEventListener('click', async function(){
+        initAudio();
+        if(micStream){
+            micStream.getTracks().forEach(t => t.stop());
+            micStream = null;
+            this.textContent = '🎤 Microfono';
+            document.getElementById('status').textContent = 'Microfono disattivato';
+            return;
+        }
+        try{
+            micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const src = audioCtx.createMediaStreamSource(micStream);
+            src.connect(analyser); // NON colleghiamo a destination (evita feedback)
+			audioPlayer.style.display = 'none';
+            this.textContent = '⏹️ Ferma Microfono';
+            document.getElementById('status').textContent = '🎤 Ascolto microfono…';
+        }catch(err){
+            alert('Impossibile accedere al microfono: ' + err.message);
+        }
+    });
+
+    // === CONTROLLI UI ===
+    document.getElementById('curls').addEventListener('input', e => {
+        params.curls = parseFloat(e.target.value);
+    });
+    document.getElementById('evolve').addEventListener('input', e => {
+        params.evolve = e.target.value / 100;
+    });
+    document.getElementById('reactivity').addEventListener('input', e => {
+        params.reactivity = e.target.value / 100;
+    });
+    document.getElementById('bloom').addEventListener('input', e => {
+        params.bloomBase = e.target.value / 100;
+    });
+    document.getElementById('colorSpeed').addEventListener('input', e => {
+        params.colorSpeed = e.target.value / 100;
+    });
+	document.getElementById('drift').addEventListener('input', e => {
+        params.drift = parseFloat(e.target.value);
+    });
+	document.getElementById('pulse').addEventListener('input', e => {
+        params.pulse = e.target.value / 100;
+    });
+    document.getElementById('trail').addEventListener('input', e => {
+        params.trail = (e.target.value / 100) * MAX_TRAIL;
+    });
+    document.getElementById('spectrumToggle').addEventListener('click', function(){
+        showSpectrum = !showSpectrum;
+        this.classList.toggle('off', !showSpectrum);
+        if (!showSpectrum) spectrumCtx.clearRect(0, 0, innerWidth, 120);
+    });
+	document.getElementById('morphSpeed').addEventListener('input', e => {
+        morphSpeed = e.target.value / 100;
+    });
+	document.getElementById('motionBlur').addEventListener('input', e => {
+        afterimagePass.uniforms['damp'].value = e.target.value / 100;
+    });
+	
+	
+
+    // Mostra/nascondi pannello UI
+    document.getElementById('toggleUi').addEventListener('click', () => {
+        document.getElementById('ui').classList.toggle('hidden');
+    });
+
+    // Sblocca l'audio al primo click (policy browser)
+    document.addEventListener('click', function resumeOnce(){
+        if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    });
+
+    // === RESIZE ===
+    window.addEventListener('resize', () => {
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+        composer.setSize(innerWidth, innerHeight);
+		resizeSpectrum();
+    });
+	
+	
+	
+	// === AUTO-HIDE UI ===
+    let idleTimer = null;
+    function showControls(){
+        document.body.classList.remove('idle');
+        document.getElementById('ui').style.opacity = '1';
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+            document.body.classList.add('idle');
+            document.getElementById('ui').style.opacity = '0';
+        }, 3000);   // sparisce dopo 3 secondi di inattività
+    }
+    document.getElementById('ui').style.transition = 'opacity .4s, transform .3s';
+    ['mousemove', 'mousedown', 'keydown', 'touchstart'].forEach(ev =>
+        document.addEventListener(ev, showControls)
+    );
+    showControls();  // avvia il timer
+	
+	
+	// === REGISTRAZIONE VIDEO ===
+    let mediaRecorder = null;
+    let recordedChunks = [];
+
+    document.getElementById('recordBtn').addEventListener('click', function(){
+        if (!recording) {
+            updateCompositeSize();
+            recording = true;   // attiva la composizione nel loop
+            drawComposite();    // primo frame
+
+            // cattura dal canvas COMPOSITO (WebGL + spettro)
+            const stream = compositeCanvas.captureStream(60);
+
+            // aggiunge audio se presente
+            if (audioCtx && sourceNode) {
+                const dest = audioCtx.createMediaStreamDestination();
+                sourceNode.connect(dest);
+                const at = dest.stream.getAudioTracks()[0];
+                if (at) stream.addTrack(at);
+            }
+
+            recordedChunks = [];
+            let mime = 'video/webm;codecs=vp9';
+            if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp8';
+            if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
+
+            mediaRecorder = new MediaRecorder(stream, {
+                mimeType: mime,
+                videoBitsPerSecond: 25000000  // 25 Mbps = alta qualità
+            });
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'lissajous_' + Date.now() + '.webm';
+                a.click();
+                URL.revokeObjectURL(url);
+                recording = false;
+            };
+            mediaRecorder.start();
+            this.classList.add('rec-active');
+        } else {
+            mediaRecorder.stop();
+            this.classList.remove('rec-active');
+        }
+    });
+	
+	
+	
+	
+
+    // === AVVIO ===
+    animate();
+</script>
+</body>
+</html>
