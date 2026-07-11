@@ -427,41 +427,7 @@ function smoothAudio(audio, k = 0.08){
     sVol    += (audio.vol    - sVol)    * k;
     return { bass: sBass, mid: sMid, treble: sTreble, vol: sVol };
 }
-// === BEAT DETECTION (migliorato) ===
-let energyHistory = [];        // storico energia bassi
-const HISTORY_SIZE = 43;       // ~0.7s a 60fps
-let beatCooldown = 0;
-let beatParams = { sens: 1.4, amount: 60 };
 
-function getBassEnergy(){
-    // energia sui BIN più bassi (kick/cassa), non la media generale
-    let e = 0;
-    const bins = 10;   // primi bin = frequenze molto basse
-    for (let i = 0; i < bins; i++) e += dataArray[i] * dataArray[i];
-    return e / bins / (255*255);   // normalizzato 0..1
-}
-
-function detectBeat(){
-	if (!dataArray) return false;
-    if (beatCooldown > 0) beatCooldown--;
-
-    const energy = getBassEnergy();
-    energyHistory.push(energy);
-    if (energyHistory.length > HISTORY_SIZE) energyHistory.shift();
-    if (energyHistory.length < HISTORY_SIZE) return false;  // aspetta di riempire
-
-    // media dello storico (SENZA il campione attuale che ha appena aggiunto)
-    let avg = 0;
-    for (let i = 0; i < energyHistory.length - 1; i++) avg += energyHistory[i];
-    avg /= (energyHistory.length - 1);
-
-    // beat = energia attuale supera la media × sensibilità
-    if (energy > avg * beatParams.sens && energy > 0.02 && beatCooldown === 0) {
-        beatCooldown = 6;   // ~100ms di pausa minima
-        return true;
-    }
-    return false;
-}
 
 
 // === MORPHING: set di formule di curva diverse ===
@@ -520,7 +486,7 @@ function updateCurve(audio){
     const phi = time * 0.5;
 
     // avanza il morphing
-    morphProgress += morphSpeed * 0.004;
+    morphProgress += morphSpeed * 0.004* (audio.vol * 5);
     if (morphProgress >= 1) {
         morphProgress = 0;
         morphIndex = morphTarget;
@@ -570,21 +536,21 @@ function updateCurve(audio){
 		const sAudio = smoothAudio(audio);
 
         // avanzamento tempo (evoluzione forma + velocità colore)
-        time += 0.005 + params.evolve * 0.02 + audio.treble * 0.03;
+        time += (0.005 + params.evolve * 0.02) * (sAudio.vol * 2) + audio.treble * 0.03;
         hue = (hue + params.colorSpeed * 0.002 + audio.vol * 0.01) % 1;
 
         // aggiorna la geometria della curva
         updateCurve(sAudio);
 
         // rotazione 3D cinematografica (accelerata dagli alti)
-		line.rotation.y += 0.002 + sAudio.mid * 0.01;
-        line.rotation.x += 0.001 + sAudio.bass * 0.005;
-        line.rotation.z += 0.0015 + sAudio.treble * 0.008;
+		line.rotation.y += sAudio.mid * 0.02;
+		line.rotation.x += sAudio.bass * 0.01;
+		line.rotation.z += sAudio.treble * 0.015;
 
         const d = params.drift;
-        line.position.x = Math.sin(time * 0.3)  * d * (0.5 + sAudio.mid);
-        line.position.y = Math.cos(time * 0.23) * d * 0.7 * (0.5 + sAudio.bass);
-        line.position.z = Math.sin(time * 0.17) * d * 1.2 * (0.5 + sAudio.vol);
+		line.position.x = Math.sin(time * 0.3)  * d * sAudio.mid;
+		line.position.y = Math.cos(time * 0.23) * d * sAudio.bass;
+		line.position.z = Math.sin(time * 0.17) * d * sAudio.vol;
 		
 		
 		// === SCIA: registra lo stato attuale e aggiorna le copie ===
