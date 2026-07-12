@@ -157,10 +157,16 @@
     <div class="ctl">
         <label for="fileInput">Sorgente Audio</label>
 		 <div class="src-row">
-            <label for="fileInput" class="btn file-btn">📁 File</label>
+            <label for="fileInput" class="btn file-btn">📄 File</label>
+			<label for="folderInput" class="btn file-btn">📁 Dir</label>
             <button class="btn mic-btn" id="micBtn">🎤 Mic</button>
         </div>
         <input type="file" id="fileInput" accept="audio/*">
+		<input type="file" id="folderInput" accept="audio/*" webkitdirectory multiple>
+        <div class="src-row">
+            <button class="btn" id="shuffleBtn" style="border-color:rgba(0,220,255,0.4)">🔀 Shuffle: OFF</button>
+            <button class="btn" id="nextBtn" style="border-color:rgba(0,220,255,0.4)">⏭ Prossimo</button>
+        </div>
         <audio id="audioPlayer" controls style="display:none;"></audio>
         <div class="status" id="status">In attesa di audio…</div>
     </div>
@@ -316,6 +322,11 @@ let params = {
 // === AUDIO ===
 let audioCtx=null, analyser=null, dataArray=null, sourceNode=null, micStream=null;
 const audioPlayer = document.getElementById('audioPlayer');
+
+// === PLAYLIST ===
+let playlist = [];
+let plIndex = 0;
+let shuffle = false;
 
 // === SPETTRO AUDIO (canvas 2D sovrapposto) ===
 const spectrumCanvas = document.getElementById('spectrum');
@@ -543,9 +554,9 @@ function updateCurve(audio){
         updateCurve(sAudio);
 
         // rotazione 3D cinematografica (accelerata dagli alti)
-		line.rotation.y += sAudio.mid * 0.02;
-		line.rotation.x += sAudio.bass * 0.01;
-		line.rotation.z += sAudio.treble * 0.015;
+		line.rotation.y += 0.0003 + sAudio.mid * 0.02;
+		line.rotation.x += 0.0003 + sAudio.bass * 0.01;
+		line.rotation.z += 0.0003 + sAudio.treble * 0.015;
 
         const d = params.drift;
 		line.position.x = Math.sin(time * 0.3)  * d * sAudio.mid;
@@ -592,21 +603,46 @@ function updateCurve(audio){
     // valore base del bloom (impostato dallo slider)
     params.bloomBase = 1.0;
 
-    // === GESTIONE FILE AUDIO ===
-    document.getElementById('fileInput').addEventListener('change', function(e){
-        const file = e.target.files[0];
-        if(!file) return;
+	
+	
+	// funzione comune: carica una lista di file come playlist
+    function loadFiles(fileList){
+        playlist = Array.from(fileList).filter(f => f.type.startsWith('audio/'));
+        if (playlist.length === 0) return;
+        plIndex = 0;
         initAudio();
-        audioPlayer.src = URL.createObjectURL(file);
         if(!sourceNode){
             sourceNode = audioCtx.createMediaElementSource(audioPlayer);
             sourceNode.connect(analyser);
             analyser.connect(audioCtx.destination);
         }
+        playTrack(plIndex);
+    }
+
+    // SINGOLO FILE
+    document.getElementById('fileInput').addEventListener('change', e => loadFiles(e.target.files));
+    // CARTELLA
+    document.getElementById('folderInput').addEventListener('change', e => loadFiles(e.target.files));
+
+    function playTrack(i){
+        const file = playlist[i];
+        if(!file) return;
+        audioPlayer.src = URL.createObjectURL(file);
         audioPlayer.play();
-		audioPlayer.style.display = 'block';
-        document.getElementById('status').textContent = '▶ ' + file.name.substring(0, 28);
-    });
+        audioPlayer.style.display = 'block';
+        document.getElementById('status').textContent =
+            `[${i+1}/${playlist.length}] ` + file.name.substring(0, 22);
+    }
+
+    function nextTrack(){
+        if (playlist.length === 0) return;
+        plIndex = shuffle
+            ? Math.floor(Math.random() * playlist.length)
+            : (plIndex + 1) % playlist.length;
+        playTrack(plIndex);
+    }
+
+    audioPlayer.addEventListener('ended', nextTrack);
 
     // === GESTIONE MICROFONO ===
     document.getElementById('micBtn').addEventListener('click', async function(){
@@ -666,7 +702,12 @@ function updateCurve(audio){
 	document.getElementById('motionBlur').addEventListener('input', e => {
         afterimagePass.uniforms['damp'].value = e.target.value / 100;
     });
-	
+	document.getElementById('shuffleBtn').addEventListener('click', function(){
+        shuffle = !shuffle;
+        this.textContent = shuffle ? '🔀 Shuffle: ON' : '🔀 Shuffle: OFF';
+        this.style.color = shuffle ? '#fff' : '#00eaff';
+    });
+    document.getElementById('nextBtn').addEventListener('click', nextTrack);
 	
 
     // Mostra/nascondi pannello UI
